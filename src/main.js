@@ -3,6 +3,7 @@ import { ViewSlot } from "./slots/ViewSlot.js";
 import { ClipSlot } from "./slots/ClipSlot.js";
 import { FontSlot } from "./slots/FontSlot.js";
 import { createLevel01 } from "./levels/level_01.js";
+import { createLevel02 } from "./levels/level_02.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -11,13 +12,14 @@ const viewSlot = new ViewSlot(canvas.width, canvas.height);
 const clipSlot = new ClipSlot();
 const fontSlot = new FontSlot();
 
-let level = createLevel01();
+const levels = [createLevel01, createLevel02];
+let currentLevelIndex = 0;
+let level = levels[currentLevelIndex]();
 let player = new Player(level.spawn.x, level.spawn.y);
 let deaths = 0;
 let won = false;
 let elapsed = 0;
 
-// Rising demonic fire embers in world/screen space
 const embers = Array.from({ length: 55 }, () => ({
   x: Math.random() * 1300,
   y: Math.random() * canvas.height,
@@ -30,21 +32,31 @@ const embers = Array.from({ length: 55 }, () => ({
 const keys = {};
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
-  if (e.code === "KeyR") resetLevel();
+  if (e.code === "KeyR") {
+    if (won && currentLevelIndex >= levels.length - 1) {
+      loadLevel(0);
+    } else {
+      resetLevel();
+    }
+  }
 });
 window.addEventListener("keyup", (e) => (keys[e.code] = false));
 
-function resetLevel() {
-  level = createLevel01();
-  player.reset();
+function loadLevel(index) {
+  currentLevelIndex = index;
+  level = levels[currentLevelIndex]();
+  player = new Player(level.spawn.x, level.spawn.y);
   viewSlot.reset();
   clipSlot.reset();
   fontSlot.reset();
   won = false;
 }
 
+function resetLevel() {
+  loadLevel(currentLevelIndex);
+}
+
 function drawDemonBackground(ctx, time, view) {
-  // Deep demonic sky gradient
   const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
   skyGrad.addColorStop(0, "#090306");
   skyGrad.addColorStop(0.55, "#24060b");
@@ -52,7 +64,6 @@ function drawDemonBackground(ctx, time, view) {
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Pulsing hellfire glow near the bottom
   const pulse = 0.85 + 0.15 * Math.sin(time * 4.5);
   const fireGlow = ctx.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height);
   fireGlow.addColorStop(0, "rgba(255, 40, 0, 0)");
@@ -60,7 +71,6 @@ function drawDemonBackground(ctx, time, view) {
   ctx.fillStyle = fireGlow;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Distant jagged demonic mountains / spires
   ctx.fillStyle = "#120407";
   ctx.beginPath();
   ctx.moveTo(0, canvas.height);
@@ -75,7 +85,6 @@ function drawDemonBackground(ctx, time, view) {
   ctx.closePath();
   ctx.fill();
 
-  // Animated flame tongues along the bottom edge
   for (let x = -20; x < canvas.width + 30; x += 26) {
     const parallaxX = ((x - (view.x * 0.35) % 26) + 26) % 26 - 26 + Math.floor(x / 26) * 26;
     const flameH = 26 + 14 * Math.sin(time * 9 + x * 0.08) + 8 * Math.cos(time * 13 + x * 0.15);
@@ -91,7 +100,6 @@ function drawDemonBackground(ctx, time, view) {
     ctx.fill();
   }
 
-  // Rising fire embers
   for (const em of embers) {
     ctx.fillStyle = `rgba(255, 140, 30, ${em.alpha})`;
     ctx.beginPath();
@@ -107,7 +115,6 @@ function gameLoop(now) {
   lastTime = now;
   elapsed += dt;
 
-  // Update rising embers
   for (const em of embers) {
     em.y -= em.vy * dt;
     em.x += (em.vx + Math.sin(elapsed * 3 + em.y * 0.03) * 18) * dt;
@@ -154,14 +161,18 @@ function gameLoop(now) {
     }
 
     if (level.goal.active && checkAABB(player, level.goal)) {
-      won = true;
-      fontSlot.spawnTaunt({
-        text: "ESCAPED HELL! (PRESS R)",
-        x: 860,
-        y: 150,
-        size: 18,
-        color: "#ff9e00"
-      });
+      if (currentLevelIndex + 1 < levels.length) {
+        loadLevel(currentLevelIndex + 1);
+      } else {
+        won = true;
+        fontSlot.spawnTaunt({
+          text: "ALL LEVELS CLEARED! (PRESS R)",
+          x: 820,
+          y: 150,
+          size: 16,
+          color: "#ff9e00"
+        });
+      }
     }
 
     if (player.dead) {
@@ -172,14 +183,12 @@ function gameLoop(now) {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Draw demonic fire background before camera/clip transforms
   drawDemonBackground(ctx, elapsed, viewSlot);
 
   ctx.save();
   clipSlot.applyMask(ctx, player, viewSlot);
   viewSlot.apply(ctx);
 
-  // Demonic portal / exit
   if (level.goal.active) {
     ctx.fillStyle = "#ff4d00";
     ctx.fillRect(level.goal.x - 3, level.goal.y - 3, level.goal.w + 6, level.goal.h + 6);
@@ -187,7 +196,6 @@ function gameLoop(now) {
     ctx.fillRect(level.goal.x + 4, level.goal.y + 4, level.goal.w - 8, level.goal.h - 8);
   }
 
-  // Obsidian / crimson-rimmed platforms
   for (const tile of level.tiles) {
     if (!clipSlot.shouldRender(tile)) continue;
     ctx.fillStyle = "#18090d";
@@ -196,7 +204,6 @@ function gameLoop(now) {
     ctx.fillRect(tile.x, tile.y, tile.w, 4);
   }
 
-  // Hellfire spikes
   ctx.fillStyle = "#ff2400";
   for (const spike of level.spikes) {
     if (!spike.active) continue;
