@@ -1,6 +1,17 @@
 export class SoundFX {
   constructor() {
     this.ctx = null;
+    this.musicTimer = null;
+    this.isMusicPlaying = false;
+    this.stepIndex = 0;
+
+    // Simple retro melody notes in Hz (0 = pause/rest)
+    this.melody = [
+      261.63, 329.63, 392.00, 523.25,
+      392.00, 329.63, 293.66, 349.23,
+      440.00, 587.33, 440.00, 349.23,
+      392.00, 0,      392.00, 0
+    ];
   }
 
   ensureCtx() {
@@ -11,6 +22,49 @@ export class SoundFX {
     if (this.ctx && this.ctx.state === "suspended") {
       this.ctx.resume();
     }
+  }
+
+  startMusic() {
+    this.ensureCtx();
+    if (!this.ctx || this.isMusicPlaying) return;
+
+    this.isMusicPlaying = true;
+    this.stepIndex = 0;
+
+    const playNextNote = () => {
+      if (!this.isMusicPlaying) return;
+
+      const freq = this.melody[this.stepIndex % this.melody.length];
+      if (freq > 0) {
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, now);
+
+        // Kept quiet (0.03) so it doesn't overpower jump/trap sound effects
+        gain.gain.setValueAtTime(0.03, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.18);
+      }
+
+      this.stepIndex++;
+      this.musicTimer = setTimeout(playNextNote, 220);
+    };
+
+    playNextNote();
+  }
+
+  stopMusic() {
+    this.isMusicPlaying = false;
+    clearTimeout(this.musicTimer);
+    this.musicTimer = null;
   }
 
   play(type) {
