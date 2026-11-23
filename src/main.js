@@ -26,7 +26,7 @@ let currentLevelIndex = 0;
 let level = levels[currentLevelIndex]();
 let player = new Player(level.spawn.x, level.spawn.y);
 let deaths = 0;
-let won = false;
+let gameCompleted = false;
 let elapsed = 0;
 
 const embers = Array.from({ length: 55 }, () => ({
@@ -42,7 +42,9 @@ const keys = {};
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
   if (e.code === "KeyR") {
-    if (won && currentLevelIndex >= levels.length - 1) {
+    if (gameCompleted) {
+      deaths = 0;
+      gameCompleted = false;
       loadLevel(0);
     } else {
       resetLevel();
@@ -58,7 +60,7 @@ function loadLevel(index) {
   viewSlot.reset();
   clipSlot.reset();
   fontSlot.reset();
-  won = false;
+  gameCompleted = false;
 }
 
 function resetLevel() {
@@ -117,6 +119,29 @@ function drawDemonBackground(ctx, time, view) {
   }
 }
 
+function drawGameCompleteOverlay(ctx) {
+  ctx.save();
+  ctx.fillStyle = "rgba(9, 3, 6, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.font = "28px 'Creepster', cursive";
+  ctx.fillStyle = "#ff4d00";
+  ctx.fillText("MASTER TRIAL CONQUERED", canvas.width / 2, 165);
+
+  ctx.font = "16px 'Press Start 2P', monospace";
+  ctx.fillStyle = "#ffe600";
+  ctx.fillText("GAME COMPLETE!", canvas.width / 2, 215);
+
+  ctx.font = "12px 'Press Start 2P', monospace";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`TOTAL FAILS: ${deaths}`, canvas.width / 2, 260);
+
+  ctx.fillStyle = "#4ade80";
+  ctx.fillText("PRESS R TO PLAY AGAIN", canvas.width / 2, 310);
+  ctx.restore();
+}
+
 let lastTime = performance.now();
 
 function gameLoop(now) {
@@ -135,7 +160,7 @@ function gameLoop(now) {
     if (em.x > canvas.width + 10) em.x = -10;
   }
 
-  if (!won) {
+  if (!gameCompleted) {
     for (const tile of level.tiles) {
       if (tile.vy) {
         tile.y += tile.vy * dt;
@@ -173,14 +198,9 @@ function gameLoop(now) {
       if (currentLevelIndex + 1 < levels.length) {
         loadLevel(currentLevelIndex + 1);
       } else {
-        won = true;
-        fontSlot.spawnTaunt({
-          text: "ALL 5 LEVELS CLEARED! (PRESS R)",
-          x: 800,
-          y: 140,
-          size: 16,
-          color: "#ff9e00"
-        });
+        gameCompleted = true;
+        viewSlot.reset();
+        clipSlot.reset();
       }
     }
 
@@ -230,6 +250,10 @@ function gameLoop(now) {
   ctx.restore();
 
   fontSlot.renderHUD(ctx, deaths, level.name);
+
+  if (gameCompleted) {
+    drawGameCompleteOverlay(ctx);
+  }
 
   requestAnimationFrame(gameLoop);
 }
