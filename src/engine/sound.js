@@ -12,6 +12,18 @@ export class SoundFX {
       440.00, 587.33, 440.00, 349.23,
       392.00, 0,      392.00, 0
     ];
+
+    // Automatically start background music on the user's first key press or click
+    const unlockAndStart = () => {
+      this.startMusic();
+      if (this.isMusicPlaying) {
+        window.removeEventListener("keydown", unlockAndStart);
+        window.removeEventListener("pointerdown", unlockAndStart);
+      }
+    };
+
+    window.addEventListener("keydown", unlockAndStart);
+    window.addEventListener("pointerdown", unlockAndStart);
   }
 
   ensureCtx() {
@@ -70,6 +82,11 @@ export class SoundFX {
   play(type) {
     this.ensureCtx();
     if (!this.ctx) return;
+
+    // Also start music if a sound effect triggers first
+    if (!this.isMusicPlaying) {
+      this.startMusic();
+    }
 
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
