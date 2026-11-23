@@ -1,258 +1,266 @@
-import { Player, checkAABB } from "./engine/physics.js";
-import { ViewSlot } from "./slots/ViewSlot.js";
-import { ClipSlot } from "./slots/ClipSlot.js";
-import { FontSlot } from "./slots/FontSlot.js";
-import { createLevel01 } from "./levels/level_01.js";
-import { createLevel02 } from "./levels/level_02.js";
-import { createLevel03 } from "./levels/level_03.js";
-import { createLevel04 } from "./levels/level_04.js";
-import { createLevel05 } from "./levels/level_05.js";
+import levelsData from "./data/levels.json" with { type: "json" };
+import { Camera } from "./engine/camera.js";
+import { Player, aabb, createTrapRuntime, updateTraps } from "./engine/physics.js";
+import { renderWorldInCamera, renderMinimap } from "./engine/renderer.js";
+import { SoundFX } from "./engine/sound.js";
+import { LevelEditor } from "./engine/editor.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const sfx = new SoundFX();
+const editor = new LevelEditor();
 
-const viewSlot = new ViewSlot(canvas.width, canvas.height);
-const clipSlot = new ClipSlot();
-const fontSlot = new FontSlot();
+let allLevels = structuredClone(levelsData.levels);
+const tileSize = levelsData.tileSize || 40;
 
-const levels = [
-  createLevel01,
-  createLevel02,
-  createLevel03,
-  createLevel04,
-  createLevel05
-];
-let currentLevelIndex = 0;
-let level = levels[currentLevelIndex]();
-let player = new Player(level.spawn.x, level.spawn.y);
+let currentLevelIdx = 0;
+let splitScreenMode = false;
 let deaths = 0;
-let gameCompleted = false;
-let elapsed = 0;
+let runTimer = 0;
+let leaderboard = JSON.parse(localStorage.getItem("troll_leaderboard") || "[]");
 
-const embers = Array.from({ length: 55 }, () => ({
-  x: Math.random() * 1300,
-  y: Math.random() * canvas.height,
-  r: 1.5 + Math.random() * 3,
-  vy: 35 + Math.random() * 75,
-  vx: (Math.random() - 0.5) * 28,
-  alpha: 0.35 + Math.random() * 0.65
-}));
+let levelState = null;
+let players = [];
+let cameras = [];
 
 const keys = {};
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
-  if (e.code === "KeyR") {
-    if (gameCompleted) {
-      deaths = 0;
-      gameCompleted = false;
-      loadLevel(0);
-    } else {
-      resetLevel();
-    }
+  if (e.code === "KeyR") restartLevel();
+  if (e.code === "KeyE") editor.toggle();
+  if (editor.enabled) {
+    if (e.code === "Digit1") editor.tool = "tile";
+    if (e.code === "Digit2") editor.tool = "falling_floor";
+    if (e.code === "Digit3") editor.tool = "hidden_spike";
+    if (e.code === "Digit4") editor.tool = "erase";
   }
 });
 window.addEventListener("keyup", (e) => (keys[e.code] = false));
 
-function loadLevel(index) {
-  currentLevelIndex = index;
-  level = levels[currentLevelIndex]();
-  player = new Player(level.spawn.x, level.spawn.y);
-  viewSlot.reset();
-  clipSlot.reset();
-  fontSlot.reset();
-  gameCompleted = false;
+canvas.addEventListener("click", (e) => {
+  if (!editor.enabled) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const cam = cameras[0];
+  const worldPos = cam.screenToWorld(sx, sy);
+  editor.handleClick(worldPos, levelState);
+});
+
+function buildLevelState(levelDef) {
+  const tiles = [];
+  let spawn = { x: 80, y: 260 };
+  let goal = { x: 1800, y: 240, w: 36, h: 48 };
+
+  levelDef.grid.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      const ch = row[c];
+      const x = c * tileSize;
+      const y = r * tileSize;
+      if (ch === "#") {
+        tiles.push({ x, y, w: tileSize, h: tileSize, solid: true });
+      } else if (ch === "P") {
+        spawn = { x, y: y - 8 };
+      } else if (ch === "G") {
+        goal = { x: x + 2, y: y - 8, w: 36, h: 48 };
+      }
+    }
+  });
+
+  const traps = (levelDef.traps || []).map(createTrapRuntime);
+  return { id: levelDef.id, name: levelDef.name, spawn, goal, tiles, traps };
 }
 
-function resetLevel() {
-  loadLevel(currentLevelIndex);
-}
-
-function drawDemonBackground(ctx, time, view) {
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  skyGrad.addColorStop(0, "#090306");
-  skyGrad.addColorStop(0.55, "#24060b");
-  skyGrad.addColorStop(1, "#5c0b0e");
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const pulse = 0.85 + 0.15 * Math.sin(time * 4.5);
-  const fireGlow = ctx.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height);
-  fireGlow.addColorStop(0, "rgba(255, 40, 0, 0)");
-  fireGlow.addColorStop(1, `rgba(255, 69, 0, ${0.32 * pulse})`);
-  ctx.fillStyle = fireGlow;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "#120407";
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  const peaks = [
-    [0, 290], [110, 195], [230, 280], [360, 165],
-    [510, 270], [650, 180], [800, 295]
-  ];
-  for (const [px, py] of peaks) {
-    ctx.lineTo(px, py);
-  }
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.closePath();
-  ctx.fill();
-
-  for (let x = -20; x < canvas.width + 30; x += 26) {
-    const parallaxX = ((x - (view.x * 0.35) % 26) + 26) % 26 - 26 + Math.floor(x / 26) * 26;
-    const flameH = 26 + 14 * Math.sin(time * 9 + x * 0.08) + 8 * Math.cos(time * 13 + x * 0.15);
-    const fGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - flameH);
-    fGrad.addColorStop(0, "#ffae00");
-    fGrad.addColorStop(0.5, "#ff2a00");
-    fGrad.addColorStop(1, "rgba(180, 0, 20, 0)");
-
-    ctx.fillStyle = fGrad;
-    ctx.beginPath();
-    ctx.moveTo(parallaxX, canvas.height);
-    ctx.quadraticCurveTo(parallaxX + 13, canvas.height - flameH * 1.2, parallaxX + 26, canvas.height);
-    ctx.fill();
-  }
-
-  for (const em of embers) {
-    ctx.fillStyle = `rgba(255, 140, 30, ${em.alpha})`;
-    ctx.beginPath();
-    ctx.arc(em.x, em.y, em.r, 0, Math.PI * 2);
-    ctx.fill();
+function setupCameras() {
+  if (splitScreenMode) {
+    const halfH = Math.floor(canvas.height / 2);
+    cameras = [
+      new Camera({ x: 0, y: 0, w: canvas.width, h: halfH }, { zoom: 0.92 }),
+      new Camera({ x: 0, y: halfH, w: canvas.width, h: halfH }, { zoom: 0.92 })
+    ];
+    players = [
+      new Player(levelState.spawn.x, levelState.spawn.y, "#38bdf8", "P1"),
+      new Player(levelState.spawn.x, levelState.spawn.y - 40, "#4ade80", "P2")
+    ];
+  } else {
+    cameras = [
+      new Camera({ x: 0, y: 0, w: canvas.width, h: canvas.height }, { zoom: 1.0 })
+    ];
+    players = [
+      new Player(levelState.spawn.x, levelState.spawn.y, "#38bdf8", "P1")
+    ];
   }
 }
 
-function drawGameCompleteOverlay(ctx) {
-  ctx.save();
-  ctx.fillStyle = "rgba(9, 3, 6, 0.82)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.textAlign = "center";
-  ctx.font = "28px 'Creepster', cursive";
-  ctx.fillStyle = "#ff4d00";
-  ctx.fillText("MASTER TRIAL CONQUERED", canvas.width / 2, 165);
-
-  ctx.font = "16px 'Press Start 2P', monospace";
-  ctx.fillStyle = "#ffe600";
-  ctx.fillText("GAME COMPLETE!", canvas.width / 2, 215);
-
-  ctx.font = "12px 'Press Start 2P', monospace";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(`TOTAL FAILS: ${deaths}`, canvas.width / 2, 260);
-
-  ctx.fillStyle = "#4ade80";
-  ctx.fillText("PRESS R TO PLAY AGAIN", canvas.width / 2, 310);
-  ctx.restore();
+function loadLevel(idx) {
+  currentLevelIdx = (idx + allLevels.length) % allLevels.length;
+  levelState = buildLevelState(allLevels[currentLevelIdx]);
+  setupCameras();
+  document.getElementById("levelSelect").value = String(currentLevelIdx);
 }
+
+function restartLevel() {
+  loadLevel(currentLevelIdx);
+}
+
+function recordLeaderboard() {
+  leaderboard.push({
+    time: Number(runTimer.toFixed(2)),
+    deaths,
+    date: new Date().toLocaleDateString()
+  });
+  leaderboard.sort((a, b) => a.time - b.time || a.deaths - b.deaths);
+  leaderboard = leaderboard.slice(0, 5);
+  localStorage.setItem("troll_leaderboard", JSON.stringify(leaderboard));
+}
+
+function populateLevelSelect() {
+  const sel = document.getElementById("levelSelect");
+  sel.innerHTML = "";
+  allLevels.forEach((lvl, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = lvl.name;
+    sel.appendChild(opt);
+  });
+}
+
+document.getElementById("levelSelect").addEventListener("change", (e) => {
+  loadLevel(Number(e.target.value));
+});
+document.getElementById("btnMode1P").addEventListener("click", () => {
+  splitScreenMode = false;
+  loadLevel(currentLevelIdx);
+});
+document.getElementById("btnMode2P").addEventListener("click", () => {
+  splitScreenMode = true;
+  loadLevel(currentLevelIdx);
+});
+document.getElementById("btnEditor").addEventListener("click", () => {
+  editor.toggle();
+});
+document.getElementById("btnSaveJson").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({ tileSize, levels: allLevels }, null, 2)], {
+    type: "application/json"
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "levels_custom.json";
+  a.click();
+});
+document.getElementById("btnLoadJson").addEventListener("click", () => {
+  document.getElementById("fileInput").click();
+});
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const parsed = JSON.parse(await file.text());
+  if (Array.isArray(parsed.levels) && parsed.levels.length > 0) {
+    allLevels = parsed.levels;
+    populateLevelSelect();
+    loadLevel(0);
+  }
+});
+
+populateLevelSelect();
+loadLevel(0);
 
 let lastTime = performance.now();
+let elapsed = 0;
 
 function gameLoop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   elapsed += dt;
 
-  for (const em of embers) {
-    em.y -= em.vy * dt;
-    em.x += (em.vx + Math.sin(elapsed * 3 + em.y * 0.03) * 18) * dt;
-    if (em.y < -10) {
-      em.y = canvas.height + 10;
-      em.x = Math.random() * canvas.width;
-    }
-    if (em.x < -10) em.x = canvas.width + 10;
-    if (em.x > canvas.width + 10) em.x = -10;
+  if (!editor.enabled) {
+    runTimer += dt;
   }
 
-  if (!gameCompleted) {
-    for (const tile of level.tiles) {
-      if (tile.vy) {
-        tile.y += tile.vy * dt;
+  const p1Controls = {
+    left: Boolean(keys["KeyA"]),
+    right: Boolean(keys["KeyD"]),
+    jump: Boolean(keys["KeyW"] || keys["Space"])
+  };
+  const p2Controls = {
+    left: Boolean(keys["ArrowLeft"]),
+    right: Boolean(keys["ArrowRight"]),
+    jump: Boolean(keys["ArrowUp"])
+  };
+
+  if (!editor.enabled) {
+    const dynamicSolids = [
+      ...levelState.tiles,
+      ...levelState.traps.filter(
+        (tr) => tr.type === "falling_floor" && tr.state !== "active"
+      )
+    ];
+
+    if (players[0]) players[0].update(dt, p1Controls, dynamicSolids, sfx);
+    if (players[1]) players[1].update(dt, p2Controls, dynamicSolids, sfx);
+
+    updateTraps(dt, levelState.traps, players, levelState, cameras[0], sfx);
+
+    for (const p of players) {
+      if (p.dead) {
+        deaths++;
+        sfx.play("death");
+        restartLevel();
+        break;
+      }
+      if (aabb(p, levelState.goal)) {
+        sfx.play("win");
+        if (currentLevelIdx + 1 < allLevels.length) {
+          loadLevel(currentLevelIdx + 1);
+        } else {
+          recordLeaderboard();
+          runTimer = 0;
+          deaths = 0;
+          loadLevel(0);
+        }
+        break;
       }
     }
+  }
 
-    for (const spike of level.spikes) {
-      if (!spike.active) continue;
-      if (spike.gravity) {
-        spike.vy += spike.gravity * dt;
-        spike.y += spike.vy * dt;
-      }
-    }
-
-    player.update(dt, keys, level.tiles);
-    viewSlot.update(dt, player);
-    fontSlot.update(dt);
-
-    for (const trig of level.triggers) {
-      if (!trig.fired && checkAABB(player, trig)) {
-        trig.fired = true;
-        trig.onEnter({ level, player, view: viewSlot, clip: clipSlot, font: fontSlot });
-      }
-    }
-
-    for (const spike of level.spikes) {
-      if (spike.active && checkAABB(player, spike)) player.dead = true;
-    }
-
-    for (const taunt of fontSlot.taunts) {
-      if (taunt.lethal && checkAABB(player, taunt)) player.dead = true;
-    }
-
-    if (level.goal.active && checkAABB(player, level.goal)) {
-      if (currentLevelIndex + 1 < levels.length) {
-        loadLevel(currentLevelIndex + 1);
-      } else {
-        gameCompleted = true;
-        viewSlot.reset();
-        clipSlot.reset();
-      }
-    }
-
-    if (player.dead) {
-      deaths++;
-      resetLevel();
-    }
+  for (let i = 0; i < cameras.length; i++) {
+    const targetPlayer = players[i] || players[0];
+    cameras[i].update(dt, targetPlayer);
   }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  drawDemonBackground(ctx, elapsed, viewSlot);
-
-  ctx.save();
-  clipSlot.applyMask(ctx, player, viewSlot);
-  viewSlot.apply(ctx);
-
-  if (level.goal.active) {
-    ctx.fillStyle = "#ff4d00";
-    ctx.fillRect(level.goal.x - 3, level.goal.y - 3, level.goal.w + 6, level.goal.h + 6);
-    ctx.fillStyle = "#ffe600";
-    ctx.fillRect(level.goal.x + 4, level.goal.y + 4, level.goal.w - 8, level.goal.h - 8);
+  for (let i = 0; i < cameras.length; i++) {
+    renderWorldInCamera(ctx, cameras[i], levelState, players, elapsed);
   }
 
-  for (const tile of level.tiles) {
-    if (!clipSlot.shouldRender(tile)) continue;
-    ctx.fillStyle = "#18090d";
-    ctx.fillRect(tile.x, tile.y, tile.w, tile.h);
-    ctx.fillStyle = "#b91c1c";
-    ctx.fillRect(tile.x, tile.y, tile.w, 4);
+  renderMinimap(ctx, { x: canvas.width - 210, y: 46, w: 196, h: 68 }, levelState, players);
+
+  ctx.fillStyle = "rgba(9, 3, 6, 0.78)";
+  ctx.fillRect(0, 0, canvas.width, 36);
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px monospace";
+  ctx.fillText(
+    `${levelState.name} | Time: ${runTimer.toFixed(1)}s | Deaths: ${deaths} | ${
+      splitScreenMode ? "2P (WASD vs Arrows)" : "1P (WASD / Space)"
+    }`,
+    12,
+    22
+  );
+
+  if (leaderboard.length > 0) {
+    const best = leaderboard[0];
+    ctx.fillStyle = "#fde047";
+    ctx.fillText(`Best: ${best.time}s (${best.deaths}d)`, canvas.width - 375, 22);
   }
 
-  ctx.fillStyle = "#ff2400";
-  for (const spike of level.spikes) {
-    if (!spike.active) continue;
-    ctx.beginPath();
-    ctx.moveTo(spike.x, spike.y + spike.h);
-    ctx.lineTo(spike.x + spike.w / 2, spike.y);
-    ctx.lineTo(spike.x + spike.w, spike.y + spike.h);
-    ctx.fill();
-  }
-
-  fontSlot.renderWorldText(ctx);
-  player.render(ctx);
-
-  viewSlot.restore(ctx);
-  ctx.restore();
-
-  fontSlot.renderHUD(ctx, deaths, level.name);
-
-  if (gameCompleted) {
-    drawGameCompleteOverlay(ctx);
+  if (editor.enabled) {
+    ctx.fillStyle = "#4ade80";
+    ctx.fillText(
+      `EDITOR ON [Tool: ${editor.tool}] — 1:Tile  2:FallFloor  3:Spike  4:Erase  E:Exit`,
+      12,
+      54
+    );
   }
 
   requestAnimationFrame(gameLoop);
