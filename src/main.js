@@ -39,6 +39,20 @@ function gameLoop(now) {
   lastTime = now;
 
   if (!won) {
+    for (const tile of level.tiles) {
+      if (tile.vy) {
+        tile.y += tile.vy * dt;
+      }
+    }
+
+    for (const spike of level.spikes) {
+      if (!spike.active) continue;
+      if (spike.gravity) {
+        spike.vy += spike.gravity * dt;
+        spike.y += spike.vy * dt;
+      }
+    }
+
     player.update(dt, keys, level.tiles);
     viewSlot.update(dt, player);
     fontSlot.update(dt);
@@ -58,9 +72,15 @@ function gameLoop(now) {
       if (taunt.lethal && checkAABB(player, taunt)) player.dead = true;
     }
 
-    if (checkAABB(player, level.goal)) {
+    if (level.goal.active && checkAABB(player, level.goal)) {
       won = true;
-      fontSlot.spawnTaunt({ text: "YOU SURVIVED! (PRESS R)", x: 880, y: 180, size: 20, color: "#4ade80" });
+      fontSlot.spawnTaunt({
+        text: "YOU SURVIVED! (PRESS R)",
+        x: 870,
+        y: 150,
+        size: 18,
+        color: "#4ade80"
+      });
     }
 
     if (player.dead) {
@@ -75,8 +95,10 @@ function gameLoop(now) {
   clipSlot.applyMask(ctx, player, viewSlot);
   viewSlot.apply(ctx);
 
-  ctx.fillStyle = "#4ade80";
-  ctx.fillRect(level.goal.x, level.goal.y, level.goal.w, level.goal.h);
+  if (level.goal.active) {
+    ctx.fillStyle = "#4ade80";
+    ctx.fillRect(level.goal.x, level.goal.y, level.goal.w, level.goal.h);
+  }
 
   for (const tile of level.tiles) {
     if (!clipSlot.shouldRender(tile)) continue;
