@@ -25,9 +25,6 @@ let cameras = [];
 
 const keys = {};
 window.addEventListener("keydown", (e) => {
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
-    e.preventDefault();
-  }
   keys[e.code] = true;
   if (e.code === "KeyR") restartLevel();
   if (e.code === "KeyE") editor.toggle();
@@ -181,14 +178,14 @@ function gameLoop(now) {
   }
 
   const p1Controls = {
+    left: Boolean(keys["KeyA"]),
+    right: Boolean(keys["KeyD"]),
+    jump: Boolean(keys["KeyW"] || keys["Space"])
+  };
+  const p2Controls = {
     left: Boolean(keys["ArrowLeft"]),
     right: Boolean(keys["ArrowRight"]),
     jump: Boolean(keys["ArrowUp"])
-  };
-  const p2Controls = {
-    left: Boolean(keys["KeyA"]),
-    right: Boolean(keys["KeyD"]),
-    jump: Boolean(keys["KeyW"])
   };
 
   if (!editor.enabled) {
@@ -245,7 +242,7 @@ function gameLoop(now) {
   ctx.font = "12px monospace";
   ctx.fillText(
     `${levelState.name} | Time: ${runTimer.toFixed(1)}s | Deaths: ${deaths} | ${
-      splitScreenMode ? "2P (Arrows vs WASD)" : "1P (Arrow Keys)"
+      splitScreenMode ? "2P (WASD vs Arrows)" : "1P (WASD / Space)"
     }`,
     12,
     22
