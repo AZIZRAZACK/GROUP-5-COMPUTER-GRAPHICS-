@@ -4,6 +4,9 @@ import { ClipSlot } from "./slots/ClipSlot.js";
 import { FontSlot } from "./slots/FontSlot.js";
 import { createLevel01 } from "./levels/level_01.js";
 import { createLevel02 } from "./levels/level_02.js";
+import { createLevel03 } from "./levels/level_03.js";
+import { createLevel04 } from "./levels/level_04.js";
+import { createLevel05 } from "./levels/level_05.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -12,7 +15,13 @@ const viewSlot = new ViewSlot(canvas.width, canvas.height);
 const clipSlot = new ClipSlot();
 const fontSlot = new FontSlot();
 
-const levels = [createLevel01, createLevel02];
+const levels = [
+  createLevel01,
+  createLevel02,
+  createLevel03,
+  createLevel04,
+  createLevel05
+];
 let currentLevelIndex = 0;
 let level = levels[currentLevelIndex]();
 let player = new Player(level.spawn.x, level.spawn.y);
@@ -166,9 +175,9 @@ function gameLoop(now) {
       } else {
         won = true;
         fontSlot.spawnTaunt({
-          text: "ALL LEVELS CLEARED! (PRESS R)",
-          x: 820,
-          y: 150,
+          text: "ALL 5 LEVELS CLEARED! (PRESS R)",
+          x: 800,
+          y: 140,
           size: 16,
           color: "#ff9e00"
         });
