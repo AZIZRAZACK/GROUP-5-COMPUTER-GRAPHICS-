@@ -105,13 +105,31 @@ export function renderWorldInCamera(ctx, camera, levelState, players, time) {
   ctx.fillStyle = PALETTE.exit;
   ctx.fillRect(g.x + 6, g.y + 6, g.w - 12, g.h - 12);
 
-  for (const p of players) {
-    if (p.dead) continue;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.fillStyle = PALETTE.shadow;
-    ctx.fillRect(p.x + 14, p.y + 8, 4, 4);
-  }
+for (const p of players) {
+  if (p.dead) continue;
+
+  // Main body
+  ctx.fillStyle = p.color;
+  ctx.fillRect(p.x, p.y, p.w, p.h);
+
+  // Little feet along the bottom edge with a subtle step when moving
+  const footW = Math.max(4, Math.floor(p.w * 0.22));
+  const footH = Math.max(3, Math.floor(p.h * 0.16));
+  const footY = p.y + p.h - footH;
+  const leftBaseX = p.x + Math.floor(p.w * 0.18);
+  const rightBaseX = p.x + p.w - Math.floor(p.w * 0.18) - footW;
+
+  const isMoving = Math.abs(p.vx || 0) > 0.05;
+  const stridePhase = isMoving ? Math.sin((p.x + (p.y || 0)) * 0.25) * 3 : 0;
+
+  ctx.fillStyle = PALETTE.shadow;
+  ctx.fillRect(leftBaseX + stridePhase, footY, footW, footH);
+  ctx.fillRect(rightBaseX - stridePhase, footY, footW, footH);
+
+  // Eye
+  ctx.fillStyle = PALETTE.shadow;
+  ctx.fillRect(p.x + 14, p.y + 8, 4, 4);
+}
 
   camera.restoreContext(ctx);
 
