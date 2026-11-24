@@ -1,3 +1,5 @@
+import { PALETTE } from "../engine/palette.js";
+
 export function createLevel01() {
   return {
     name: "1-1 DEFINITELY THE EXIT",
@@ -12,11 +14,11 @@ export function createLevel01() {
       vy: 0
     },
     tiles: [
-      { id: "start_floor", x: 0, y: 360, w: 280, h: 90, solid: true, color: "#3a3a4a", vy: 0 },
-      { id: "delay_drop_plat", x: 320, y: 340, w: 130, h: 22, solid: true, color: "#4a4a62", vy: 0 },
-      { id: "mid_floor", x: 500, y: 360, w: 260, h: 90, solid: true, color: "#3a3a4a", vy: 0 },
-      { id: "bait_ledge", x: 810, y: 310, w: 170, h: 22, solid: true, color: "#3a3a4a", vy: 0 },
-      { id: "real_goal_ledge", x: 1060, y: 280, w: 140, h: 22, solid: true, color: "#3a3a4a", vy: 0 }
+      { id: "start_floor", x: 0, y: 360, w: 280, h: 90, solid: true, color: PALETTE.tile, vy: 0 },
+      { id: "delay_drop_plat", x: 320, y: 340, w: 130, h: 22, solid: true, color: PALETTE.tile, vy: 0 },
+      { id: "mid_floor", x: 500, y: 360, w: 260, h: 90, solid: true, color: PALETTE.tile, vy: 0 },
+      { id: "bait_ledge", x: 810, y: 310, w: 170, h: 22, solid: true, color: PALETTE.tile, vy: 0 },
+      { id: "real_goal_ledge", x: 1060, y: 280, w: 140, h: 22, solid: true, color: PALETTE.tile, vy: 0 }
     ],
     spikes: [
       { id: "bait_drop_spike", x: 890, y: 210, w: 30, h: 22, active: false, vy: 0, gravity: 980 },
@@ -28,7 +30,7 @@ export function createLevel01() {
         x: 340, y: 260, w: 90, h: 80,
         fired: false,
         onEnter: ({ level, view, font }) => {
-          font.spawnTaunt({ text: "COMPLETELY STABLE", x: 295, y: 235, size: 14, color: "#94a3b8" });
+          font.spawnTaunt({ text: "COMPLETELY STABLE", x: 295, y: 235, size: 14, color: PALETTE.uiMuted });
           setTimeout(() => {
             const plat = level.tiles.find(t => t.id === "delay_drop_plat");
             if (plat) {
@@ -68,7 +70,7 @@ export function createLevel01() {
           view.triggerShake(0.3, 11);
           view.toggleFlip();
           clip.enableSpotlight(155);
-          font.spawnTaunt({ text: "SIKE! KEEP GOING", x: 790, y: 120, size: 15, color: "#facc15" });
+          font.spawnTaunt({ text: "SIKE! KEEP GOING", x: 790, y: 120, size: 15, color: PALETTE.exit });
         }
       }
     ]

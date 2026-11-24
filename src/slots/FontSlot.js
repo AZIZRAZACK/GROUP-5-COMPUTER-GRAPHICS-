@@ -1,3 +1,5 @@
+import { PALETTE } from "../engine/palette.js";
+
 export class FontSlot {
   constructor() {
     this.taunts = [];
@@ -13,7 +15,7 @@ export class FontSlot {
     this.currentFont = "'Creepster', cursive";
   }
 
-  spawnTaunt({ text, x, y, size = 18, color = "#ff3e3e", lethal = false }) {
+  spawnTaunt({ text, x, y, size = 18, color = PALETTE.danger, lethal = false }) {
     this.taunts.push({
       text,
       x,
@@ -46,9 +48,9 @@ export class FontSlot {
 
   renderHUD(ctx, deaths, levelName) {
     ctx.font = `14px ${this.currentFont}`;
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = PALETTE.ui;
     ctx.fillText(`LEVEL: ${levelName}`, 20, 32);
-    ctx.fillStyle = "#ff5555";
+    ctx.fillStyle = PALETTE.danger;
     ctx.fillText(`FAILS: ${deaths}`, 640, 32);
   }
 }

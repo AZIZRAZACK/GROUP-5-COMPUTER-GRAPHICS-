@@ -1,3 +1,5 @@
+import { PALETTE } from "./palette.js";
+
 export function aabb(a, b) {
   return (
     a.x < b.x + b.w &&
@@ -8,7 +10,7 @@ export function aabb(a, b) {
 }
 
 export class Player {
-  constructor(x, y, color = "#38bdf8", label = "P1") {
+  constructor(x, y, color = PALETTE.player1, label = "P1") {
     this.spawnX = x;
     this.spawnY = y;
     this.color = color;
@@ -114,38 +116,110 @@ export class Player {
 }
 
 export function createTrapRuntime(trapDef) {
+  const floorTiles = trapDef.type === "falling_floor"
+    ? Array.from({ length: Math.ceil(trapDef.w / 40) }, (_, index) => {
+        const x = trapDef.x + index * 40;
+        return {
+          x,
+          y: trapDef.y,
+          w: Math.min(40, trapDef.x + trapDef.w - x),
+          h: trapDef.h,
+          state: "intact",
+          vy: 0,
+          solid: true
+        };
+      })
+    : [];
+
   return {
     ...trapDef,
+    initialDefinition: { ...trapDef },
     state: "idle",
     timer: 0,
     vy: 0,
     baseY: trapDef.y,
     visible: trapDef.type !== "invisible_block",
     solid: trapDef.type === "invisible_block",
-    triggeredSpike: false
+    triggeredSpike: false,
+    spikeHeight: 0,
+    spikeTimer: 0,
+    floorTiles,
+    collapseIndex: 0,
+    collapseTimer: 0,
+    particles: []
   };
+}
+
+export function resetTriggeredTraps(traps) {
+  for (const trap of traps) {
+    if (trap.state === "idle") continue;
+    const resetTrap = createTrapRuntime(trap.initialDefinition);
+    for (const key of Object.keys(trap)) {
+      if (!(key in resetTrap)) delete trap[key];
+    }
+    Object.assign(trap, resetTrap);
+  }
+}
+
+function triangleIntersectsRect(triangle, rect) {
+  const rectangle = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h }
+  ];
+  const axes = [{ x: 1, y: 0 }, { x: 0, y: 1 }];
+
+  for (let i = 0; i < triangle.length; i++) {
+    const start = triangle[i];
+    const end = triangle[(i + 1) % triangle.length];
+    axes.push({ x: -(end.y - start.y), y: end.x - start.x });
+  }
+
+  return axes.every((axis) => {
+    const triangleProjections = triangle.map((point) => point.x * axis.x + point.y * axis.y);
+    const rectangleProjections = rectangle.map((point) => point.x * axis.x + point.y * axis.y);
+    return (
+      Math.max(...triangleProjections) >= Math.min(...rectangleProjections) &&
+      Math.max(...rectangleProjections) >= Math.min(...triangleProjections)
+    );
+  });
 }
 
 export function updateTraps(dt, traps, players, levelState, camera, sfx) {
   for (const trap of traps) {
+    let justArmed = false;
     if (trap.state === "idle") {
-      const crossed = players.some((p) => !p.dead && p.x + p.w >= trap.triggerX);
-      if (crossed) {
+      const triggered = players.some((p) => {
+        if (p.dead) return false;
+        if (trap.type === "falling_floor") {
+          const closeToFloor = Math.abs(p.y + p.h - trap.y) <= 24;
+          const nearFloor = p.x + p.w >= trap.x - 12 && p.x <= trap.x + trap.w + 12;
+          return closeToFloor && nearFloor;
+        }
+        return p.x + p.w >= trap.triggerX;
+      });
+      if (triggered) {
         trap.state = "armed";
-        trap.timer = trap.delay ?? 0;
+        trap.timer = trap.type === "falling_floor"
+          ? 0.3
+          : trap.delay ?? (trap.type === "hidden_spike" ? 0.1 : 0);
+        justArmed = true;
         sfx?.play("trap");
       }
     }
 
-    if (trap.state === "armed") {
+    if (trap.state === "armed" && !justArmed) {
       trap.timer -= dt;
       if (trap.timer <= 0) {
         trap.state = "active";
         if (trap.type === "falling_floor") {
-          trap.vy = 120;
+          trap.collapseTimer = 0;
         } else if (trap.type === "hidden_spike") {
           trap.triggeredSpike = true;
-          camera?.shake(0.2, 6);
+          trap.spikeTimer = 0;
+          trap.spikeHeight = 0;
+          camera?.shake(0.2, 2);
         } else if (trap.type === "runaway_door") {
           levelState.goal.x += trap.offsetX ?? 120;
           levelState.goal.y += trap.offsetY ?? -40;
@@ -168,10 +242,7 @@ export function updateTraps(dt, traps, players, levelState, camera, sfx) {
         }
       }
     } else if (trap.state === "active") {
-      if (trap.type === "falling_floor") {
-        trap.vy += 980 * dt;
-        trap.y += trap.vy * dt;
-      } else if (trap.type === "reverse_gravity") {
+      if (trap.type === "reverse_gravity") {
         trap.timer -= dt;
         if (trap.timer <= 0) {
           for (const p of players) p.gravityDir = 1;
@@ -197,13 +268,69 @@ export function updateTraps(dt, traps, players, levelState, camera, sfx) {
           if (camera) camera.flipped = false;
           trap.state = "done";
         }
+      } else if (trap.type === "hidden_spike") {
+        trap.spikeTimer = Math.min(0.12, trap.spikeTimer + dt);
+        const progress = trap.spikeTimer / 0.12;
+        trap.spikeHeight = 1 - (1 - progress) ** 3;
+      }
+    }
+
+    if (trap.type === "falling_floor") {
+      if (trap.state === "active") {
+        trap.collapseTimer += dt;
+        while (trap.collapseIndex < trap.floorTiles.length && trap.collapseTimer >= 0.08) {
+          trap.collapseTimer -= 0.08;
+          const tile = trap.floorTiles[trap.collapseIndex++];
+          tile.state = "falling";
+          tile.vy = 0;
+          for (let i = 0; i < 4; i++) {
+            trap.particles.push({
+              x: tile.x + Math.random() * tile.w,
+              y: tile.y + Math.random() * tile.h,
+              vx: (Math.random() - 0.5) * 100,
+              vy: -Math.random() * 110,
+              size: 3 + Math.random() * 3,
+              life: 0.45
+            });
+          }
+        }
+      }
+
+      const bounds = camera?.getVisibleWorldBounds();
+      for (const tile of trap.floorTiles) {
+        if (tile.state !== "falling") continue;
+        tile.vy += 980 * dt;
+        tile.y += tile.vy * dt;
+        if (bounds && tile.y > bounds.bottom + tile.h) tile.state = "gone";
+      }
+      for (const particle of trap.particles) {
+        particle.vy += 520 * dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.life -= dt;
+      }
+      trap.particles = trap.particles.filter((particle) => particle.life > 0);
+
+      if (
+        trap.state === "active" &&
+        trap.collapseIndex === trap.floorTiles.length &&
+        trap.floorTiles.every((tile) => tile.state === "gone")
+      ) {
+        trap.state = "done";
       }
     }
 
     for (const p of players) {
       if (p.dead || p.finished) continue;
-      if (trap.type === "hidden_spike" && trap.triggeredSpike && aabb(p, trap)) {
-        p.dead = true;
+      if (trap.type === "hidden_spike" && trap.spikeHeight > 0.5) {
+        const visibleHeight = trap.h * trap.spikeHeight;
+        const baseY = trap.y;
+        const triangle = [
+          { x: trap.x, y: baseY },
+          { x: trap.x + trap.w / 2, y: baseY - visibleHeight },
+          { x: trap.x + trap.w, y: baseY }
+        ];
+        if (triangleIntersectsRect(triangle, p)) p.dead = true;
       }
       if (trap.type === "fake_checkpoint" && trap.lethal && aabb(p, trap)) {
         p.dead = true;
