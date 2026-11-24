@@ -20,4 +20,4 @@ Scan to play:
 
 ![Scan to play](game-qr.png)
 
-https://AZIZRAZACK.github.io/GROUP-5-COMPUTER-GRAPHICS-/
+https://troll-platform.itch.io/demon-troll-platformer-g5
