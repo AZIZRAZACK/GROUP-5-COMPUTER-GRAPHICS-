@@ -197,6 +197,16 @@ export function updateTraps(dt, traps, players, levelState, camera, sfx) {
           const nearFloor = p.x + p.w >= trap.x - 12 && p.x <= trap.x + trap.w + 12;
           return closeToFloor && nearFloor;
         }
+        if (trap.type === "runaway_door") {
+          const pastX = trap.triggerX == null || p.x + p.w >= trap.triggerX;
+          const nearTop = trap.maxY == null || p.y <= trap.maxY;
+          const approachingGoal = !trap.nearGoal || (
+            levelState?.goal &&
+            Math.abs((p.x + p.w / 2) - (levelState.goal.x + (levelState.goal.w ?? 40) / 2)) <= 70 &&
+            Math.abs((p.y + p.h / 2) - (levelState.goal.y + (levelState.goal.h ?? 40) / 2)) <= 70
+          );
+          return pastX && nearTop && approachingGoal;
+        }
         return p.x + p.w >= trap.triggerX;
       });
       if (triggered) {
@@ -223,6 +233,7 @@ export function updateTraps(dt, traps, players, levelState, camera, sfx) {
         } else if (trap.type === "runaway_door") {
           levelState.goal.x += trap.offsetX ?? 120;
           levelState.goal.y += trap.offsetY ?? -40;
+          trap.state = "done";
           camera?.shake(0.2, 5);
         } else if (trap.type === "reverse_gravity") {
           trap.timer = trap.duration ?? 2.2;
