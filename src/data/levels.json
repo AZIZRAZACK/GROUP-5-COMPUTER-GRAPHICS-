@@ -40,7 +40,7 @@
       ],
       "traps": [
         { "type": "runaway_door", "triggerX": 1560, "offsetX": 140, "offsetY": -60 },
-        { "type": "runaway_door", "triggerX": 1900, "offsetX": -600, "offsetY": 0 },
+        { "type": "runaway_door", "triggerX": 2000, "offsetX": -600, "offsetY": 0 },
         { "type": "falling_floor", "x": 640, "y": 400, "w": 240, "h": 40, "triggerX": 600, "delay": 0.18 },
         { "type": "hidden_spike", "x": 1600, "y": 400, "w": 40, "h": 24, "triggerX": 1520 }
       ]
